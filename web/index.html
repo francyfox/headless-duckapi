@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>DuckAI — Настройки</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --page: #0b0b0d;          /* webk dark page */
+    --card: #212121;          /* webk dark card */
+    --card-pressed: #2c2c2e;
+    --text: #ffffff;
+    --hint: #8e8e93;
+    --accent: #8774e1;        /* webk violet */
+    --red: #ff595a;
+    --blue: #3390ec;
+    --green: #31b545;
+    --orange: #f2a33c;
+    --gray-icon: #6d6d72;
+    --radius: 18px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--text);
+    font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    overscroll-behavior: none;
+  }
+
+  /* ---------- screens ---------- */
+  #screens { position: fixed; inset: 0; overflow: hidden; }
+  .screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    background: var(--page);
+    transform: translateX(100%);
+    transition: transform .28s cubic-bezier(.33,.9,.45,1);
+    will-change: transform;
+  }
+  .screen.current  { transform: translateX(0); }
+  .screen.left     { transform: translateX(-28%); }
+  .screen.right    { transform: translateX(100%); }
+  .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(28px + var(--safe-bottom)); }
+
+  /* ---------- header ---------- */
+  .header {
+    display: flex; align-items: center; gap: 6px;
+    padding: calc(12px + var(--safe-top)) 16px 12px;
+    background: color-mix(in srgb, var(--page) 86%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    position: sticky; top: 0; z-index: 5;
+  }
+  .back-btn {
+    display: none; align-items: center; gap: 2px;
+    border: 0; background: none; color: var(--accent);
+    font-size: 17px; cursor: pointer; padding: 6px 8px 6px 0;
+  }
+  .back-btn::before { content: "‹"; font-size: 30px; line-height: .8; }
+  .screen.sub .back-btn { display: flex; }
+  .header h1 { font-size: 17px; font-weight: 600; }
+
+  /* ---------- profile block ---------- */
+  .profile { text-align: center; padding: 26px 0 8px; }
+  .profile img {
+    width: 104px; height: 104px; border-radius: 50%;
+    object-fit: cover; box-shadow: 0 0 0 3px var(--card), 0 6px 24px rgba(0,0,0,.55);
+  }
+  .profile .online {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); margin: 12px auto 4px; opacity: .9;
+  }
+  .profile .status { color: var(--hint); font-size: 13px; margin-bottom: 6px; }
+
+  /* ---------- cards ---------- */
+  .section { margin: 10px 12px; }
+  .section-title {
+    color: var(--hint); font-size: 13px; font-weight: 500;
+    padding: 14px 16px 7px; text-transform: none;
+  }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 14px; min-height: 58px;
+    cursor: pointer; position: relative;
+    transition: background .12s;
+  }
+  .row:active { background: var(--card-pressed); }
+  .row + .row::before {
+    content: ""; position: absolute; left: 68px; right: 0; top: 0;
+    height: 1px; background: rgba(255,255,255,.06);
+  }
+  .icon {
+    flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; color: #fff;
+  }
+  .i-blue   { background: var(--blue); }
+  .i-violet { background: var(--accent); }
+  .i-green  { background: var(--green); }
+  .i-orange { background: var(--orange); }
+  .i-red    { background: var(--red); }
+  .i-gray   { background: var(--gray-icon); }
+  .row .body { flex: 1; min-width: 0; }
+  .row .title { font-size: 16px; font-weight: 560; }
+  .row .title.red { color: var(--red); }
+  .row .sub {
+    color: var(--hint); font-size: 13.5px; margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .chevron { color: var(--hint); font-size: 20px; padding: 0 2px; }
+
+  /* radio rows */
+  .radio-row .title { font-weight: 500; }
+  .radio {
+    flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--hint); position: relative; transition: all .15s;
+  }
+  .radio.on { border-color: var(--accent); }
+  .radio.on::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* toggle */
+  .switch {
+    flex: 0 0 50px; width: 50px; height: 30px; border-radius: 15px;
+    background: var(--gray-icon); position: relative; transition: background .18s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 26px; height: 26px; border-radius: 50%; background: #fff;
+    transition: transform .18s; box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { transform: translateX(20px); }
+
+  .footnote {
+    color: var(--hint); font-size: 13px;
+    padding: 4px 22px 0; line-height: 1.4;
+  }
+  .footer {
+    text-align: center; color: var(--hint); font-size: 12.5px;
+    padding: 18px 0 6px; opacity: .75;
+  }
+  .spinner {
+    display: inline-block; width: 16px; height: 16px; vertical-align: -3px;
+    border: 2px solid var(--hint); border-top-color: transparent;
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="screens">
+
+  <!-- ================= main ================= -->
+  <div class="screen current" id="scr-main">
+    <div class="header"><h1>Настройки</h1></div>
+    <div class="scroll">
+      <div class="profile">
+        <img src="avatar.jpg" alt="DuckAI" id="avatar-img">
+        <div class="online"></div>
+        <div class="status">DuckAI · бот</div>
+      </div>
+
+      <div class="section">
+        <div class="card">
+          <div class="row" id="row-model">
+            <div class="icon i-blue">🤖</div>
+            <div class="body">
+              <div class="title">Модель</div>
+              <div class="sub" id="sub-model">…</div>
+            </div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row" id="row-effort">
+            <div class="icon i-violet">🧠</div>
+            <div class="body">
+              <div class="title">Размышления</div>
+              <div class="sub" id="sub-effort">…</div>
+            </div>
+            <div class="chevron">›</div>
+          </div>
+          <div class="row" id="row-web">
+            <div class="icon i-green">🌐</div>
+            <div class="body">
+              <div class="title">Веб-поиск</div>
+              <div class="sub" id="sub-web">…</div>
+            </div>
+            <div class="switch" id="sw-web"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">История диалога</div>
+        <div class="card">
+          <div class="row" style="cursor:default">
+            <div class="icon i-gray">💬</div>
+            <div class="body">
+              <div class="title">Сообщений в памяти</div>
+              <div class="sub">последние используются как контекст</div>
+            </div>
+            <div class="chevron" id="cnt-history">…</div>
+          </div>
+          <div class="row" id="row-reset">
+            <div class="icon i-red">🧹</div>
+            <div class="body"><div class="title red">Очистить историю</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">DuckAI на движке duck.ai · Telegram Serverless</div>
+    </div>
+  </div>
+
+  <!-- ================= models ================= -->
+  <div class="screen sub" id="scr-models">
+    <div class="header">
+      <button class="back-btn" data-back></button>
+      <h1>Модель</h1>
+    </div>
+    <div class="scroll">
+      <div class="section">
+        <div class="card" id="model-list"><div class="row" style="cursor:default"><div class="body"><span class="spinner"></span></div></div></div>
+      </div>
+      <div class="footnote">Список живой — с duck.ai. Помеченные 🔒 работают только на тарифах Plus/Pro.</div>
+    </div>
+  </div>
+
+  <!-- ================= error ================= -->
+  <div class="screen sub" id="scr-error">
+    <div class="header"><h1>Ошибка</h1></div>
+    <div class="scroll">
+      <div class="section">
+        <div class="card">
+          <div class="row" style="cursor:default">
+            <div class="icon i-red">⚠️</div>
+            <div class="body">
+              <div class="title">Не удалось загрузить настройки</div>
+              <div class="sub" id="err-detail">…</div>
+            </div>
+          </div>
+          <div class="row" id="row-retry">
+            <div class="icon i-blue">🔄</div>
+            <div class="body"><div class="title">Повторить</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="footnote">Убедись, что приложение открыто из Телеграма. Если ошибка повторяется — напиши владельцу бота.</div>
+    </div>
+  </div>
+
+  <!-- ================= effort ================= -->
+  <div class="screen sub" id="scr-effort">
+    <div class="header">
+      <button class="back-btn" data-back></button>
+      <h1>Размышления</h1>
+    </div>
+    <div class="scroll">
+      <div class="section">
+        <div class="card" id="effort-list"></div>
+      </div>
+      <div class="footnote">«Размышления» — сколько модель думает перед ответом. Выше уровень — умнее ответ, дольше ожидание.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) {
+    tg.ready(); tg.expand();
+    try { tg.isVerticalSwipesEnabled = false; } catch (e) {}
+  }
+
+  // Avatar fallback: if avatar.jpg is missing, swap to a letter-based avatar.
+  window.addEventListener('load', () => {
+    const img = document.getElementById('avatar-img');
+    if (img) img.onerror = () => {
+      const rep = document.createElement('div');
+      rep.style.cssText = 'width:104px;height:104px;border-radius:50%;margin:0 auto;' +
+        'display:flex;align-items:center;justify-content:center;font-size:44px;' +
+        'background:#8774e1;color:#fff;box-shadow:0 0 0 3px var(--card);';
+      rep.textContent = '🦆';
+      img.replaceWith(rep);
+    };
+  });
+
+  // ---------- theme ----------
+  function applyTheme() {
+    const p = (tg && tg.themeParams) || {};
+    const r = document.documentElement.style;
+    const dark = !tg || tg.colorScheme !== 'light';
+    r.setProperty('--page',   p.secondary_bg_color || (dark ? '#0b0b0d' : '#efeff4'));
+    r.setProperty('--card',   p.bg_color          || (dark ? '#212121' : '#ffffff'));
+    r.setProperty('--text',   p.text_color        || (dark ? '#ffffff' : '#000000'));
+    r.setProperty('--hint',   p.hint_color        || '#8e8e93');
+    r.setProperty('--accent', p.button_color      || (dark ? '#8774e1' : '#007aff'));
+    r.setProperty('--card-pressed', dark ? '#2c2c2e' : '#e5e5ea');
+  }
+  applyTheme();
+  if (tg) tg.onEvent('themeChanged', applyTheme);
+
+  // ---------- api ----------
+  // Primary path: Telegram.WebApp.Serverless.call (official SDK).
+  // Fallback: the exact same POST the SDK makes, done by hand — older cached
+  // copies of telegram-web-app.js (before Serverless existed) would otherwise
+  // break the whole app.
+  function manualCall(name, input) {
+    return new Promise((resolve, reject) => {
+      const initData = tg && tg.initData;
+      if (!initData) {
+        const e = new Error('Нет initData — открой приложение из Телеграма');
+        e.status = 0;
+        return reject(e);
+      }
+      fetch('/api/' + name, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'TMA ' + window.btoa(initData),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input || {}),
+      }).then((r) => {
+        return r.json().then((d) => ({ r, d })).catch(() => ({ r, d: null }));
+      }).then(({ r, d }) => {
+        if (d && d.ok === true) return resolve(d.result);
+        const e = new Error((d && d.description) || ('HTTP ' + r.status));
+        e.status = r.status;
+        e.type = d && d.error_type;
+        reject(e);
+      }).catch((e) => reject(e));
+    });
+  }
+
+  function call(input) {
+    return new Promise((resolve, reject) => {
+      if (tg && tg.Serverless && typeof tg.Serverless.call === 'function') {
+        try {
+          tg.Serverless.call('settings', input, (err, data) => err ? reject(err) : resolve(data));
+          return;
+        } catch (e) {
+          // e.g. WebAppServerlessInitDataUnavailable — fall through to manual
+          if (String(e && e.message).indexOf('InitData') === -1) return reject(e);
+        }
+      }
+      manualCall('settings', input).then(resolve, reject);
+    });
+  }
+
+  // call + friendly error alert for click handlers
+  async function callOrAlert(input) {
+    try {
+      return await call(input);
+    } catch (e) {
+      const msg = String((e && e.message) || e).slice(0, 120);
+      try { if (tg && tg.showAlert) tg.showAlert('⚠️ ' + msg); } catch (e2) {}
+      return null;
+    }
+  }
+  const haptic = (kind) => {
+    try {
+      if (kind === 'select') tg.HapticFeedback.selectionChanged();
+      else tg.HapticFeedback.impactOccurred('light');
+    } catch (e) {}
+  };
+
+  // ---------- state & render ----------
+  let S = null; // settings snapshot
+
+  function renderMain() {
+    document.getElementById('sub-model').textContent  = S.modelLabel;
+    document.getElementById('sub-effort').textContent = S.effortLabel;
+    document.getElementById('sub-web').textContent    = S.web ? 'вкл' : 'выкл';
+    document.getElementById('sw-web').classList.toggle('on', S.web);
+    document.getElementById('cnt-history').textContent = S.history;
+  }
+
+  function renderModels() {
+    const box = document.getElementById('model-list');
+    box.innerHTML = '';
+    S.models.forEach((m) => {
+      const row = document.createElement('div');
+      row.className = 'row radio-row';
+      row.innerHTML =
+        '<div class="radio' + (m.id === S.model ? ' on' : '') + '"></div>' +
+        '<div class="body"><div class="title">' + esc(m.name) + '</div>' +
+        '<div class="sub">' + esc(m.id) + '</div></div>';
+      row.addEventListener('click', async () => {
+        if (m.id === S.model) return go('main');
+        if (!m.free) return haptic('tap');
+        haptic('select');
+        const next = await callOrAlert({ action: 'model', value: m.id });
+        if (!next) return;
+        S = next;
+        renderModels(); renderMain();
+      });
+      box.appendChild(row);
+    });
+  }
+
+  function renderEffort() {
+    const opts = [
+      { v: 'none',   t: 'Выкл',   s: 'отвечает сразу' },
+      { v: 'low',    t: 'Низкий', s: 'короткие раздумья' },
+      { v: 'medium', t: 'Средний',s: 'глубже думает, дольше ждём' },
+    ];
+    const box = document.getElementById('effort-list');
+    box.innerHTML = '';
+    opts.forEach((o) => {
+      const row = document.createElement('div');
+      row.className = 'row radio-row';
+      row.innerHTML =
+        '<div class="radio' + (o.v === S.effort ? ' on' : '') + '"></div>' +
+        '<div class="body"><div class="title">' + o.t + '</div><div class="sub">' + o.s + '</div></div>';
+      row.addEventListener('click', async () => {
+        haptic('select');
+        const next = await callOrAlert({ action: 'effort', value: o.v });
+        if (!next) return;
+        S = next;
+        renderEffort(); renderMain();
+      });
+      box.appendChild(row);
+    });
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ---------- navigation ----------
+  const stack = [];
+  function showScreen(name) {
+    const cur = document.querySelector('.screen.current');
+    const next = document.getElementById('scr-' + name);
+    if (!next || cur === next) return;
+    cur.classList.remove('current'); cur.classList.add('left');
+    next.classList.remove('left', 'right'); next.classList.add('current');
+  }
+  function go(name) {
+    const cur = document.querySelector('.screen.current');
+    const next = document.getElementById('scr-' + name);
+    if (cur === next) return;
+    cur.classList.remove('current'); cur.classList.add('left');
+    next.classList.remove('left', 'right'); next.classList.add('current');
+    stack.push({ from: cur, to: next, id: name });
+    if (name === 'models') renderModels();
+    if (name === 'effort') renderEffort();
+    if (tg && tg.BackButton) {
+      tg.BackButton.show();
+      tg.HapticFeedback.impactOccurred('light');
+    }
+  }
+  function back() {
+    const item = stack.pop();
+    if (!item) return;
+    item.to.classList.remove('current'); item.to.classList.add('right');
+    item.from.classList.remove('left'); item.from.classList.add('current');
+    if (!stack.length && tg && tg.BackButton) tg.BackButton.hide();
+    haptic('tap');
+  }
+  document.querySelectorAll('[data-back]').forEach((b) => b.addEventListener('click', back));
+  if (tg && tg.BackButton) tg.onEvent('backButtonClicked', back);
+
+  document.getElementById('row-model').addEventListener('click', () => go('models'));
+  document.getElementById('row-effort').addEventListener('click', () => go('effort'));
+  document.getElementById('row-retry').addEventListener('click', () => {
+    showScreen('main');
+    boot();
+  });
+
+  document.getElementById('row-web').addEventListener('click', async () => {
+    haptic('tap');
+    const next = await callOrAlert({ action: 'web', value: !S.web });
+    if (!next) return;
+    S = next;
+    renderMain();
+  });
+
+  document.getElementById('row-reset').addEventListener('click', async () => {
+    haptic('tap');
+    const sure = () => callOrAlert({ action: 'reset' }).then((s) => { if (s) { S = s; renderMain(); } });
+    if (tg && tg.showConfirm) tg.showConfirm('Очистить историю диалога?', (ok) => { if (ok) sure(); });
+    else sure();
+  });
+
+  // ---------- boot ----------
+  function boot() {
+    document.getElementById('sub-model').textContent = '…';
+    document.getElementById('sub-effort').textContent = '…';
+    document.getElementById('sub-web').textContent = '…';
+    document.getElementById('cnt-history').textContent = '…';
+    (async () => {
+      try { S = await call({ action: 'get' }); }
+      catch (e) {
+        const detail = document.getElementById('err-detail');
+        detail.textContent = String((e && e.message) || e).slice(0, 90) +
+          (e && e.status ? ' (HTTP ' + e.status + ')' : '');
+        showScreen('error');
+        return;
+      }
+      renderMain();
+    })();
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "headless-duckapi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted Telegram AI bot on the duck.ai protocol — GPT/Claude/Mistral, streaming answers, /img, photo vision, Mini App. VPS port of a Telegram Serverless bot.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node app.js",
+    "setup": "node app.js setup",
+    "test": "node test/orm.test.mjs && node test/http.test.mjs"
+  },
+  "dependencies": {
+    "sdk": "file:platform/sdk"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.2.0"
+  },
+  "license": "MIT"
+}

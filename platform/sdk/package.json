@@ -1,0 +1,12 @@
+{
+  "name": "sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Compatibility layer: Telegram Serverless 'sdk' module for Node.js (headless-duckapi VPS port)",
+  "exports": {
+    ".": "./index.js",
+    "./db": "./db.js"
+  },
+  "license": "MIT"
+}

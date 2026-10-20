@@ -1,0 +1,12 @@
+# Example Caddyfile — automatic HTTPS for the Mini App (web_app buttons in
+# Telegram require a https:// URL). Caddy fetches certificates by itself.
+#
+#   1. Point an A/AAAA DNS record of your domain at the VPS.
+#   2. Install caddy, replace the file contents of /etc/caddy/Caddyfile:
+#
+# duck.example.com {
+#     reverse_proxy 127.0.0.1:8080
+# }
+#
+#   3. systemctl reload caddy
+#   4. Set WEBAPP_URL=https://duck.example.com in .env and restart the bot.

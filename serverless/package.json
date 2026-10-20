@@ -1,0 +1,15 @@
+{
+  "name": "duckai-tg-bot",
+  "private": true,
+  "type": "module",
+  "description": "AI-бот на Telegram Serverless: модели duck.ai (GPT-6 Luna, Claude Haiku 4.5, ...) без VPS",
+  "scripts": {
+    "push": "tgcloud push",
+    "migrate": "tgcloud migrate",
+    "status": "tgcloud status",
+    "deploy": "tgcloud push && tgcloud migrate --safe"
+  },
+  "devDependencies": {
+    "@tgcloud/cli": "*"
+  }
+}

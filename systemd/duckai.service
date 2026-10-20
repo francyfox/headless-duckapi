@@ -1,0 +1,23 @@
+[Unit]
+Description=headless-duckapi — Telegram AI bot (duck.ai protocol)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust paths / user to your install location, e.g. /opt/headless-duckapi:
+WorkingDirectory=/opt/headless-duckapi
+EnvironmentFile=/opt/headless-duckapi/.env
+ExecStart=/usr/bin/node /opt/headless-duckapi/app.js
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/headless-duckapi/data
+
+[Install]
+WantedBy=multi-user.target

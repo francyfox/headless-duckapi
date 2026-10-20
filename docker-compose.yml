@@ -1,0 +1,14 @@
+services:
+  headless-duckapi:
+    build: .
+    image: headless-duckapi:latest
+    container_name: headless-duckapi
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      - headless-duckapi-data:/app/data
+
+volumes:
+  headless-duckapi-data:
