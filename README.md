@@ -73,7 +73,7 @@ That's it — open the bot in Telegram and send `/start`. Logs: `docker compose 
 Node.js **≥ 22.5** (24 recommended — SQLite is built in, so `npm install` brings zero dependencies):
 
 ```bash
-git clone https://github.com/<your-username>/headless-duckapi.git && cd headless-duckapi
+git clone https://github.com/golaso024/headless-duckapi.git && cd headless-duckapi
 npm install
 cp .env.example .env          # then put your bot token into .env
 node app.js
@@ -136,9 +136,6 @@ The fun part of this project — [`bot/lib/duckai.js`](bot/lib/duckai.js), ~42 K
 
 Solved tokens, frontend versions and protocol counters are persisted in SQLite (`config` / `duck_daily` tables), so restarts don't re-bother the challenge endpoint — that's what keeps the bot clear of 418s/429s. Protocol originally ported from [aurora-develop/Duck2api](https://github.com/aurora-develop/Duck2api) (Go), then hardened and extended.
 
-## Demo
-
-> *placeholder — screenshots/GIF will go here*
 
 ## Troubleshooting
 
