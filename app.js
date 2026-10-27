@@ -231,6 +231,7 @@ export async function handleWebhook(req, res, secret, onUpdate) {
   if (update && typeof update === 'object') onUpdate(update);
 }
 
+const SHUTDOWN_GRACE_MS = 25000;
 let running = true;
 let shuttingDown = false;
 function installShutdown(server) {
@@ -241,7 +242,11 @@ function installShutdown(server) {
     running = false;
     // The webhook stays registered: Telegram queues updates while we are down.
     if (server) server.close();
-    setTimeout(() => process.exit(0), 1500).unref();
+    // Let answers that are still streaming finish, within the grace period.
+    const pending = [...chains.values()];
+    if (pending.length) log('waiting for', pending.length, 'chat(s) to finish…');
+    Promise.allSettled(pending).then(() => process.exit(0));
+    setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
@@ -356,6 +361,19 @@ export async function main() {
   }
   if (cmd && cmd !== 'run') throw new Error('unknown command: ' + cmd + ' (use: node app.js [setup|config …])');
 
+  // Load update handlers before the HTTP server starts: on hosts that boot
+  // the app per request, the first webhook arrives right after listen().
+  const [message, callbackQuery, myChatMember] = await Promise.all([
+    import('./bot/handlers/message.js'),
+    import('./bot/handlers/callback_query.js'),
+    import('./bot/handlers/my_chat_member.js'),
+  ]);
+  HANDLERS = {
+    message: message.default,
+    callback_query: callbackQuery.default,
+    my_chat_member: myChatMember.default,
+  };
+
   // Webhook target: WEBHOOK_URL, else the Mini App's public URL. Telegram only
   // delivers webhooks to https.
   const publicUrl = String(process.env.WEBHOOK_URL || process.env.WEBAPP_URL || '').trim();
@@ -408,18 +426,6 @@ export async function main() {
     await db.delete(config).where(eq(config.key, 'vps_setup_done')).run();
     await db.insert(config).values({ key: 'vps_setup_done', value: new Date().toISOString() }).run();
   }
-
-  // Load update handlers before Telegram starts delivering.
-  const [message, callbackQuery, myChatMember] = await Promise.all([
-    import('./bot/handlers/message.js'),
-    import('./bot/handlers/callback_query.js'),
-    import('./bot/handlers/my_chat_member.js'),
-  ]);
-  HANDLERS = {
-    message: message.default,
-    callback_query: callbackQuery.default,
-    my_chat_member: myChatMember.default,
-  };
 
   if (useWebhook) {
     const hookUrl = webhookUrl(publicUrl);
