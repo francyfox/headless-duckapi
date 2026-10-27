@@ -16,7 +16,7 @@ const FAKE_TOKEN = '123456789:TESTTOKEN_abcdefghijklmnopqrst';
 writeFileSync(path.join(tmp, 'web', 'index.html'), '<!doctype html><title>ok</title>');
 copyFileSync(new URL('../web/avatar.jpg', import.meta.url), path.join(tmp, 'web', 'avatar.jpg'));
 
-const { verifyInitData, startHttpServer, handleWebhook, webhookSecret, WEBHOOK_PATH } = await import('../app.js');
+const { verifyInitData, startHttpServer, handleWebhook, webhookSecret, webhookUrl, WEBHOOK_PATH } = await import('../app.js');
 
 // --- initData verification (canonical Telegram algorithm) ---
 function sign(paramsObj) {
@@ -54,6 +54,11 @@ const SECRET = webhookSecret(FAKE_TOKEN);
 assert.match(SECRET, /^[A-Za-z0-9_-]{1,256}$/);
 assert.equal(webhookSecret(FAKE_TOKEN), SECRET);
 console.log('  ✓ derived webhook secret is stable and Telegram-valid');
+
+for (const u of ['https://x.app', 'https://x.app/', 'https://x.app/api/webhook', 'https://x.app/api/webhook.', 'https://x.app/api/webhook/']) {
+  assert.equal(webhookUrl(u), 'https://x.app/api/webhook', u);
+}
+console.log('  ✓ webhook url normalized from base or full url');
 
 const server = await startHttpServer({
   port: 0, // ephemeral

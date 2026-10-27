@@ -167,6 +167,41 @@ export function webhookSecret(botToken) {
   return createHash('sha256').update('headless-duckapi-webhook:' + botToken).digest('hex');
 }
 
+// WEBHOOK_URL may be the bare host or the full endpoint; stray trailing
+// slashes/dots (copy-paste from a sentence) are dropped.
+export function webhookUrl(publicUrl) {
+  const base = String(publicUrl || '').trim().replace(/[\/.]+$/, '');
+  return base.endsWith(WEBHOOK_PATH) ? base : base + WEBHOOK_PATH;
+}
+
+// Register the webhook unless Telegram already has the same one: hosts that
+// restart the app often would otherwise hit setWebhook's 429 rate limit.
+// getWebhookInfo does not return the secret, so `secretKnown` says whether
+// this url+secret pair was registered before. Waits out 429s (retry_after)
+// instead of crashing.
+async function ensureWebhook(api, url, secret, secretKnown) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const info = await api.getWebhookInfo({});
+      const sameUpdates = String(info.allowed_updates || []) === String(ALLOWED_UPDATES);
+      if (info.url === url && sameUpdates && secretKnown) return { changed: false, info };
+      await api.setWebhook({
+        url,
+        secret_token: secret,
+        allowed_updates: ALLOWED_UPDATES,
+        max_connections: 40,
+        drop_pending_updates: false,
+      });
+      return { changed: true, info: null };
+    } catch (e) {
+      const retry = e && e.error_code === 429 && e.parameters && e.parameters.retry_after;
+      if (!retry || attempt >= 5) throw e;
+      log('Telegram rate limit on webhook setup — retrying in ' + retry + 's');
+      await sleep((retry + 1) * 1000);
+    }
+  }
+}
+
 function secretMatches(got, want) {
   const a = Buffer.from(String(got || ''));
   const b = Buffer.from(want);
@@ -323,7 +358,7 @@ export async function main() {
 
   // Webhook target: WEBHOOK_URL, else the Mini App's public URL. Telegram only
   // delivers webhooks to https.
-  const publicUrl = String(process.env.WEBHOOK_URL || process.env.WEBAPP_URL || '').trim().replace(/\/+$/, '');
+  const publicUrl = String(process.env.WEBHOOK_URL || process.env.WEBAPP_URL || '').trim();
   const useWebhook = /^https:\/\//i.test(publicUrl);
   const secret = webhookSecret(token);
 
@@ -387,19 +422,20 @@ export async function main() {
   };
 
   if (useWebhook) {
-    const hookUrl = publicUrl + WEBHOOK_PATH;
-    await api.setWebhook({
-      url: hookUrl,
-      secret_token: secret,
-      allowed_updates: ALLOWED_UPDATES,
-      max_connections: 40,
-      drop_pending_updates: false,
-    });
-    log('webhook set to ' + hookUrl + ' (the Serverless copy, if any, stops receiving updates)');
-    const info = await api.getWebhookInfo({}).catch(() => null);
+    const hookUrl = webhookUrl(publicUrl);
+    const fingerprint = createHash('sha256').update(hookUrl + '\n' + secret).digest('hex').slice(0, 16);
+    const saved = await db.select().from(config).where(eq(config.key, 'webhook_fingerprint')).get();
+    const { changed, info } = await ensureWebhook(api, hookUrl, secret, !!saved && saved.value === fingerprint);
+    if (changed) {
+      await db.delete(config).where(eq(config.key, 'webhook_fingerprint')).run();
+      await db.insert(config).values({ key: 'webhook_fingerprint', value: fingerprint }).run();
+    }
+    log(changed
+      ? 'webhook set to ' + hookUrl + ' (the Serverless copy, if any, stops receiving updates)'
+      : 'webhook already set to ' + hookUrl);
     if (info && info.last_error_message) {
       log('webhook last error reported by Telegram:', info.last_error_message,
-        '(check that ' + publicUrl + ' proxies to port ' + port + ')');
+        '(check that ' + hookUrl + ' reaches port ' + port + ')');
     }
     return;
   }
