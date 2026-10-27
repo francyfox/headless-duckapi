@@ -16,7 +16,7 @@ const FAKE_TOKEN = '123456789:TESTTOKEN_abcdefghijklmnopqrst';
 writeFileSync(path.join(tmp, 'web', 'index.html'), '<!doctype html><title>ok</title>');
 copyFileSync(new URL('../web/avatar.jpg', import.meta.url), path.join(tmp, 'web', 'avatar.jpg'));
 
-const { verifyInitData, startHttpServer } = await import('../app.js');
+const { verifyInitData, startHttpServer, handleWebhook, webhookSecret, WEBHOOK_PATH } = await import('../app.js');
 
 // --- initData verification (canonical Telegram algorithm) ---
 function sign(paramsObj) {
@@ -48,11 +48,19 @@ console.log('  ✓ missing hash rejected');
 
 // --- HTTP server: static files + /api envelope, no valid auth needed ---
 const seen = [];
+const updates = [];
+delete process.env.WEBHOOK_SECRET;
+const SECRET = webhookSecret(FAKE_TOKEN);
+assert.match(SECRET, /^[A-Za-z0-9_-]{1,256}$/);
+assert.equal(webhookSecret(FAKE_TOKEN), SECRET);
+console.log('  ✓ derived webhook secret is stable and Telegram-valid');
+
 const server = await startHttpServer({
   port: 0, // ephemeral
   webDir: path.join(tmp, 'web'),
   onApi: async (req, res, pathname) => {
     seen.push(pathname);
+    if (pathname === WEBHOOK_PATH) return handleWebhook(req, res, SECRET, (u) => updates.push(u));
     if (pathname !== '/api/settings') {
       res.writeHead(404, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ ok: false, description: 'unknown endpoint' }));
@@ -92,6 +100,27 @@ const env = await api401.json();
 assert.equal(env.ok, false);
 assert.equal(env.error_type, 'unauthorized');
 console.log('  ✓ /api/settings without auth -> {ok:false} envelope');
+
+const hook = (headers, body) => fetch(base + WEBHOOK_PATH, {
+  method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body,
+});
+const upd = { update_id: 7, message: { message_id: 1, chat: { id: 5 }, text: 'hi' } };
+
+assert.equal((await hook({}, JSON.stringify(upd))).status, 401);
+assert.equal((await hook({ 'x-telegram-bot-api-secret-token': 'wrong' }, JSON.stringify(upd))).status, 401);
+assert.equal(updates.length, 0);
+console.log('  ✓ webhook without/with wrong secret -> 401, update dropped');
+
+assert.equal((await hook({ 'x-telegram-bot-api-secret-token': SECRET }, '{nope')).status, 400);
+console.log('  ✓ webhook bad json -> 400');
+
+const ok = await hook({ 'x-telegram-bot-api-secret-token': SECRET }, JSON.stringify(upd));
+assert.equal(ok.status, 200);
+assert.deepEqual(updates, [upd]);
+console.log('  ✓ webhook with secret -> 200, update dispatched');
+
+assert.equal((await fetch(base + WEBHOOK_PATH)).status, 405);
+console.log('  ✓ webhook GET -> 405');
 
 server.close();
 rmSync(tmp, { recursive: true, force: true });

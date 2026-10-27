@@ -36,11 +36,11 @@
 
 ```
                         Telegram                       duck.ai
-                 (Bot API, long polling)         (недокументированный API)
+                   (Bot API, webhook)            (недокументированный API)
                           │                              │
                  ┌────────▼─────────┐          ┌─────────▼──────────┐
                  │      app.js      │          │ bot/lib/duckai.js  │
-                 │  цикл polling    │          │  клиент протокола  │
+                 │  webhook (HTTPS) │          │  клиент протокола  │
                  │  HTTP (mini app) │          │  солвер челленджа  │
                  ├──────────────────┤          │  (чистый JS, 0 dep)│
                  │ bot/handlers/*   │◄────────►│  SSE-стриминг      │
@@ -89,7 +89,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now duckai
 journalctl -u duckai -f
 ```
 
-> Токен — в **@BotFather → твой бот → API Token**. Запускай либо эту копию, либо Serverless-копию на одном токене, но не обе сразу (при старте VPS-версия удаляет webhook — побеждает та, что запущена последней).
+> Токен — в **@BotFather → твой бот → API Token**. Запускай либо эту копию, либо Serverless-копию на одном токене, но не обе сразу (при старте VPS-версия перенаправляет webhook на себя — побеждает та, что запущена последней).
 
 ## Конфигурация (`.env`)
 
@@ -98,12 +98,14 @@ journalctl -u duckai -f
 | `BOT_TOKEN` | ✅ | Токен бота из @BotFather |
 | `ADMIN_IDS` | — | Telegram id через запятую, кому доступен `/stats`. Автор проекта зашит как админ по умолчанию — добавь свой id |
 | `WEBAPP_URL` | — | Публичный `https://`-адрес этого хоста для кнопки 🎛 Настройки (Mini App). Телеграм принимает только `https`; если пусто — кнопка скрывается, всё то же самое доступно через `/settings` |
+| `WEBHOOK_URL` | — | Публичный `https://`-адрес для апдейтов; при старте бот регистрирует `<WEBHOOK_URL>/api/webhook`. По умолчанию берётся `WEBAPP_URL`. Если ни один не `https://` — бот откатывается на long polling |
+| `WEBHOOK_SECRET` | — | Значение, которое Телеграм шлёт в `X-Telegram-Bot-Api-Secret-Token` (1–256 символов `A-Za-z0-9_-`); если пусто — выводится из `BOT_TOKEN` |
 | `PORT` | — | HTTP-порт Mini App/API (по умолчанию `8080`) |
 | `DATA_DIR` | — | Папка SQLite-хранилища (по умолчанию `./data`) |
 
-### Mini App по HTTPS (опционально)
+### Webhook и Mini App по HTTPS
 
-Mini App бот раздаёт сам на `PORT`. Но для кнопок `web_app` Телеграм требует `https://`, так что поставь TLS-прокси и пропиши `WEBAPP_URL`:
+Апдейты бот принимает через webhook, а Mini App раздаёт сам — всё на `PORT`. Для webhook и кнопок `web_app` Телеграм требует `https://`, так что поставь TLS-прокси и пропиши `WEBAPP_URL` (он же используется для webhook, если не задан `WEBHOOK_URL`):
 
 ```bash
 # /etc/caddy/Caddyfile — Caddy сам получает сертификаты
@@ -112,7 +114,7 @@ duck.example.com {
 }
 ```
 
-Потом `WEBAPP_URL=https://duck.example.com` в `.env` и рестарт. См. [`examples/Caddyfile`](examples/Caddyfile).
+Потом `WEBAPP_URL=https://duck.example.com` в `.env` и рестарт — в логе появится `webhook set to https://duck.example.com/api/webhook`. Без https бот тоже работает, через long polling. См. [`examples/Caddyfile`](examples/Caddyfile).
 
 ### Оверрайды на живую (таблица config)
 
@@ -145,7 +147,8 @@ node app.js setup                            # переприменить опи
 
 | Симптом | Что это / что делать |
 |---|---|
-| `getUpdates conflict: another getUpdates/webhook instance is running` | Serverless-копия этого бота всё ещё задеплоена на тот же токен. Останови одну из копий. |
+| `getUpdates conflict: another getUpdates/webhook instance is running` | Только в режиме polling: Serverless-копия этого бота всё ещё задеплоена на тот же токен. Останови одну из копий. |
+| `webhook last error reported by Telegram: …` | Телеграм не может достучаться до `<WEBHOOK_URL>/api/webhook` — проверь DNS, TLS и что прокси ведёт на `PORT`. |
 | `Telegram auth failed: Unauthorized` | Неверный `BOT_TOKEN` — сверься с @BotFather. |
 | 418/429 в чате | duck.ai режет частоту; бот сам ретраит со свежими токенами. Если повторяется — подожди пару минут. |
 | Нет кнопки 🎛 Настройки в меню | `WEBAPP_URL` не задан или не `https://` — см. раздел про Mini App. |

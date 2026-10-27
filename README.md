@@ -36,11 +36,11 @@ Streaming answers · GPT / Claude / Mistral · image generation · photo vision 
 
 ```
                         Telegram                       duck.ai
-                 (Bot API, long polling)         (undocumented chat API)
+                   (Bot API, webhook)            (undocumented chat API)
                           │                              │
                  ┌────────▼─────────┐          ┌─────────▼──────────┐
                  │      app.js      │          │ bot/lib/duckai.js  │
-                 │  polling loop    │          │  protocol client   │
+                 │  webhook (HTTPS) │          │  protocol client   │
                  │  HTTP (mini app) │          │  challenge solver  │
                  ├──────────────────┤          │  (pure JS, no deps)│
                  │ bot/handlers/*   │◄────────►│  SSE streaming     │
@@ -88,7 +88,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now duckai
 journalctl -u duckai -f
 ```
 
-> Get the token from **@BotFather → your bot → API Token**. Use a bot token of a bot you control; don't run this and the Serverless copy on the same token at the same time (the VPS build removes the webhook on boot — last one started wins).
+> Get the token from **@BotFather → your bot → API Token**. Use a bot token of a bot you control; don't run this and the Serverless copy on the same token at the same time (the VPS build points the webhook at itself on boot — last one started wins).
 
 ## Configuration (`.env`)
 
@@ -97,12 +97,14 @@ journalctl -u duckai -f
 | `BOT_TOKEN` | ✅ | Bot token from @BotFather |
 | `ADMIN_IDS` | — | Comma-separated Telegram user ids allowed to run `/stats`. The original author's id is baked in as a default admin — add yours |
 | `WEBAPP_URL` | — | Public `https://` URL of this host for the 🎛 Настройки Mini App button. Telegram only accepts `https` there; if unset the button is hidden and `/settings` still covers everything |
+| `WEBHOOK_URL` | — | Public `https://` base URL for updates; the bot registers `<WEBHOOK_URL>/api/webhook` on boot. Defaults to `WEBAPP_URL`. If neither is an `https://` URL, the bot falls back to long polling |
+| `WEBHOOK_SECRET` | — | Value Telegram sends in `X-Telegram-Bot-Api-Secret-Token` (1–256 chars `A-Za-z0-9_-`); derived from `BOT_TOKEN` when empty |
 | `PORT` | — | HTTP port for the Mini App/API server (default `8080`) |
 | `DATA_DIR` | — | SQLite storage directory (default `./data`) |
 
-### Mini App over HTTPS (optional)
+### Webhook + Mini App over HTTPS
 
-The bot serves the Mini App itself on `PORT`. Telegram requires an `https://` URL for `web_app` keyboard buttons, so put a TLS proxy in front and set `WEBAPP_URL`:
+The bot receives updates via webhook and serves the Mini App itself, both on `PORT`. Telegram requires `https://` for webhooks and `web_app` buttons, so put a TLS proxy in front and set `WEBAPP_URL` (used for the webhook too, unless `WEBHOOK_URL` is set):
 
 ```bash
 # /etc/caddy/Caddyfile — Caddy handles certificates automatically
@@ -111,7 +113,7 @@ duck.example.com {
 }
 ```
 
-Then `WEBAPP_URL=https://duck.example.com` in `.env` and restart. See [`examples/Caddyfile`](examples/Caddyfile).
+Then `WEBAPP_URL=https://duck.example.com` in `.env` and restart — the log shows `webhook set to https://duck.example.com/api/webhook`. Without an https URL the bot still works, via long polling. See [`examples/Caddyfile`](examples/Caddyfile).
 
 ### Runtime overrides (config table)
 
@@ -141,7 +143,8 @@ Solved tokens, frontend versions and protocol counters are persisted in SQLite (
 
 | Symptom | Meaning / fix |
 |---|---|
-| `getUpdates conflict: another getUpdates/webhook instance is running` | The Serverless copy of this bot is still deployed on the same token. Stop one of them. |
+| `getUpdates conflict: another getUpdates/webhook instance is running` | Polling mode only: the Serverless copy of this bot is still deployed on the same token. Stop one of them. |
+| `webhook last error reported by Telegram: …` | Telegram cannot reach `<WEBHOOK_URL>/api/webhook` — check DNS, TLS and that the proxy forwards to `PORT`. |
 | `Telegram auth failed: Unauthorized` | Wrong `BOT_TOKEN` — re-check @BotFather. |
 | 418/429 messages in chat | duck.ai is rate-limiting; the bot retries with fresh tokens automatically. If it persists, wait a few minutes. |
 | No 🎛 Настройки button in the menu keyboard | `WEBAPP_URL` is not set to an `https://` URL — see the Mini App section. |

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// app.js — headless-duckapi entrypoint: long-polling Telegram bot + Mini App host.
+// app.js — headless-duckapi entrypoint: webhook Telegram bot + Mini App host.
 //
 // Self-hosted port of the Telegram Serverless duck.ai bot. The bot code in
 // bot/ is the cloud code (byte-compatible) running on top of the thin 'sdk'
@@ -11,8 +11,10 @@
 //   2. opens SQLite (DATA_DIR, default ./data) and migrates the schema
 //   3. starts an HTTP server: serves web/ (the Mini App) and POST /api/settings
 //      (verified initData, same envelope the cloud platform uses)
-//   4. switches the bot to long polling (deleteWebhook first), dispatches
-//      updates to bot/handlers/* — concurrent across chats, serialized per chat
+//   4. registers a webhook (setWebhook -> WEBHOOK_URL/api/webhook, checked with
+//      a secret token) and dispatches incoming updates to bot/handlers/* —
+//      concurrent across chats, serialized per chat. Without a public https
+//      URL it falls back to long polling (deleteWebhook + getUpdates).
 //
 // CLI:  node app.js            — run the bot
 //       node app.js setup      — apply bot appearance (description, commands,
@@ -23,7 +25,7 @@
 import './env.js';
 import { pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { stat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -145,20 +147,74 @@ export function dispatch(update) {
   chains.set(key, next.finally(() => { if (chains.get(key) === next) chains.delete(key); }));
 }
 
-async function pollLoop() {
-  let offset = 0;
-  let running = true;
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-  let shuttingDown = false;
-  function shutdown(sig) {
+// ---------------------------------------------------------------------------
+// webhook: POST /api/webhook from Telegram
+// ---------------------------------------------------------------------------
+
+export const WEBHOOK_PATH = '/api/webhook';
+const ALLOWED_UPDATES = ['message', 'callback_query', 'my_chat_member'];
+const MAX_UPDATE_BYTES = 1 << 20;
+
+// Telegram's secret_token allows 1-256 chars of [A-Za-z0-9_-]. When
+// WEBHOOK_SECRET is not set, derive a stable one from the bot token so
+// restarts keep the same secret.
+export function webhookSecret(botToken) {
+  const s = process.env.WEBHOOK_SECRET;
+  if (s) {
+    if (!/^[A-Za-z0-9_-]{1,256}$/.test(s)) throw new Error('WEBHOOK_SECRET must be 1-256 chars of A-Z a-z 0-9 _ -');
+    return s;
+  }
+  return createHash('sha256').update('headless-duckapi-webhook:' + botToken).digest('hex');
+}
+
+function secretMatches(got, want) {
+  const a = Buffer.from(String(got || ''));
+  const b = Buffer.from(want);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// Answers 200 right away and runs the handler in the background: answers are
+// streamed for tens of seconds, and Telegram re-sends updates that are not
+// acknowledged in time.
+export async function handleWebhook(req, res, secret, onUpdate) {
+  if (req.method !== 'POST') return json(res, 405, { ok: false, description: 'POST required' });
+  if (!secretMatches(req.headers['x-telegram-bot-api-secret-token'], secret)) {
+    return json(res, 401, { ok: false, description: 'bad secret token', error_type: 'unauthorized' });
+  }
+  const chunks = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > MAX_UPDATE_BYTES) return json(res, 413, { ok: false, description: 'update too large' });
+    chunks.push(c);
+  }
+  let update;
+  try { update = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (e) {
+    return json(res, 400, { ok: false, description: 'bad json body' });
+  }
+  json(res, 200, { ok: true });
+  if (update && typeof update === 'object') onUpdate(update);
+}
+
+let running = true;
+let shuttingDown = false;
+function installShutdown(server) {
+  const shutdown = (sig) => {
     if (shuttingDown) return;
     shuttingDown = true;
     log('received', sig, '— shutting down…');
     running = false;
+    // The webhook stays registered: Telegram queues updates while we are down.
+    if (server) server.close();
     setTimeout(() => process.exit(0), 1500).unref();
-  }
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
 
+async function pollLoop() {
+  const { api } = await import('sdk');
+  let offset = 0;
   log('long polling started');
   while (running) {
     let updates = null;
@@ -166,7 +222,7 @@ async function pollLoop() {
       updates = await api.getUpdates({
         offset,
         timeout: 30,
-        allowed_updates: ['message', 'callback_query', 'my_chat_member'],
+        allowed_updates: ALLOWED_UPDATES,
       });
     } catch (e) {
       const msg = String((e && e.description) || (e && e.message) || e);
@@ -265,13 +321,23 @@ export async function main() {
   }
   if (cmd && cmd !== 'run') throw new Error('unknown command: ' + cmd + ' (use: node app.js [setup|config …])');
 
-  // Mini App / API HTTP server.
+  // Webhook target: WEBHOOK_URL, else the Mini App's public URL. Telegram only
+  // delivers webhooks to https.
+  const publicUrl = String(process.env.WEBHOOK_URL || process.env.WEBAPP_URL || '').trim().replace(/\/+$/, '');
+  const useWebhook = /^https:\/\//i.test(publicUrl);
+  const secret = webhookSecret(token);
+
+  // Mini App / API / webhook HTTP server.
   const port = parseInt(process.env.PORT || '8080', 10) || 8080;
   const { default: settingsEndpoint } = await import('./bot/endpoints/settings.js');
   const server = await startHttpServer({
     port,
     webDir: path.join(here, 'web'),
     onApi: async (req, res, pathname) => {
+      if (pathname === WEBHOOK_PATH) {
+        if (!useWebhook) return json(res, 404, { ok: false, description: 'webhook mode is off' });
+        return handleWebhook(req, res, secret, dispatch);
+      }
       if (pathname !== '/api/settings') return json(res, 404, { ok: false, description: 'unknown endpoint' });
       if (req.method !== 'POST') return json(res, 405, { ok: false, description: 'POST required' });
       const m = String(req.headers['authorization'] || '').match(/^TMA\s+(.+)$/i);
@@ -294,12 +360,7 @@ export async function main() {
     },
   });
   log('mini app + api listening on http://0.0.0.0:' + port);
-
-  // Switch from webhook (the Serverless deployment) to long polling.
-  try {
-    await api.deleteWebhook({ drop_pending_updates: false });
-    log('webhook deleted (cloud copy will not receive updates until re-deployed)');
-  } catch (e) { /* never set — fine */ }
+  installShutdown(server);
 
   // First boot on a fresh DB: apply the bot appearance once (description,
   // commands, menu button, avatar). Same result as `node app.js setup`.
@@ -313,7 +374,7 @@ export async function main() {
     await db.insert(config).values({ key: 'vps_setup_done', value: new Date().toISOString() }).run();
   }
 
-  // Load update handlers, then poll forever.
+  // Load update handlers before Telegram starts delivering.
   const [message, callbackQuery, myChatMember] = await Promise.all([
     import('./bot/handlers/message.js'),
     import('./bot/handlers/callback_query.js'),
@@ -324,6 +385,31 @@ export async function main() {
     callback_query: callbackQuery.default,
     my_chat_member: myChatMember.default,
   };
+
+  if (useWebhook) {
+    const hookUrl = publicUrl + WEBHOOK_PATH;
+    await api.setWebhook({
+      url: hookUrl,
+      secret_token: secret,
+      allowed_updates: ALLOWED_UPDATES,
+      max_connections: 40,
+      drop_pending_updates: false,
+    });
+    log('webhook set to ' + hookUrl + ' (the Serverless copy, if any, stops receiving updates)');
+    const info = await api.getWebhookInfo({}).catch(() => null);
+    if (info && info.last_error_message) {
+      log('webhook last error reported by Telegram:', info.last_error_message,
+        '(check that ' + publicUrl + ' proxies to port ' + port + ')');
+    }
+    return;
+  }
+
+  // No public https URL: fall back to long polling.
+  log('WEBHOOK_URL/WEBAPP_URL is not an https:// URL — falling back to long polling');
+  try {
+    await api.deleteWebhook({ drop_pending_updates: false });
+    log('webhook deleted (cloud copy will not receive updates until re-deployed)');
+  } catch (e) { /* never set — fine */ }
   await pollLoop();
 }
 

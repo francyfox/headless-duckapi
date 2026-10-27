@@ -1,5 +1,5 @@
-# Example Caddyfile — automatic HTTPS for the Mini App (web_app buttons in
-# Telegram require a https:// URL). Caddy fetches certificates by itself.
+# Example Caddyfile — automatic HTTPS for the webhook and the Mini App
+# (Telegram requires https:// for both). Caddy fetches certificates by itself.
 #
 #   1. Point an A/AAAA DNS record of your domain at the VPS.
 #   2. Install caddy, replace the file contents of /etc/caddy/Caddyfile:
@@ -9,4 +9,5 @@
 # }
 #
 #   3. systemctl reload caddy
-#   4. Set WEBAPP_URL=https://duck.example.com in .env and restart the bot.
+#   4. Set WEBAPP_URL=https://duck.example.com in .env and restart the bot —
+#      it registers https://duck.example.com/api/webhook with Telegram.

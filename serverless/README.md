@@ -40,5 +40,6 @@ Notes:
 - `/stats` admins: `lib/metrics.js -> DEFAULT_ADMIN_IDS` — put your own
   Telegram user id there.
 - Run either the Serverless copy **or** the VPS copy on the same bot token,
-  not both at once (webhook vs polling conflict). The VPS build calls
-  `deleteWebhook` on boot, so the last one started wins.
+  not both at once: a bot token has a single webhook. The VPS build calls
+  `setWebhook` (or `deleteWebhook` in polling mode) on boot, so the last one
+  started wins.
